@@ -1,0 +1,11 @@
+# Minimal requirements for Document Parsing Service
+# Use this if the main requirements.txt has conflicts
+
+# Core dependencies
+fastapi
+uvicorn[standard]
+docling
+sqlalchemy
+httpx
+pydantic
+python-dotenv

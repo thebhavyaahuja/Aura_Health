@@ -1,0 +1,24 @@
+# Document Parsing Service Dependencies
+
+# FastAPI and web framework
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0
+
+# Document parsing - let pip resolve compatible version
+docling
+
+# Database
+sqlalchemy>=2.0.0
+
+# HTTP client
+httpx>=0.24.0
+
+# Data validation - let FastAPI handle pydantic version
+pydantic>=2.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+
+# Development dependencies (optional)
+pytest>=7.0.0
+pytest-asyncio>=0.20.0
