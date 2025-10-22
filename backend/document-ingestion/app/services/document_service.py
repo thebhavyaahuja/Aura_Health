@@ -1,6 +1,7 @@
 """
 Document service for handling document operations
 """
+import httpx
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -60,6 +61,9 @@ class DocumentService:
         )
         self.db.add(processing_status)
         self.db.commit()
+        
+        # Trigger document parsing service
+        await self.trigger_parsing_service(document.id, str(file_path))
         
         return document
     
@@ -135,3 +139,44 @@ class DocumentService:
         self.db.commit()
         self.db.refresh(processing_status)
         return processing_status
+    
+    async def trigger_parsing_service(self, document_id: str, file_path: str) -> None:
+        """Trigger document parsing service"""
+        try:
+            payload = {
+                "document_id": document_id,
+                "file_path": file_path
+            }
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "http://localhost:8002/parsing/parse",
+                    json=payload,
+                    params={"api_key": "demo-api-key-123"},
+                    timeout=30.0
+                )
+                
+                if response.status_code == 200:
+                    # Update status to indicate parsing started
+                    self.add_processing_status(
+                        document_id, 
+                        "document_parsing", 
+                        "processing"
+                    )
+                else:
+                    # Log error but don't fail upload
+                    self.add_processing_status(
+                        document_id, 
+                        "document_parsing", 
+                        "failed", 
+                        f"HTTP {response.status_code}"
+                    )
+                    
+        except Exception as e:
+            # Log error but don't fail upload
+            self.add_processing_status(
+                document_id, 
+                "document_parsing", 
+                "failed", 
+                str(e)
+            )

@@ -24,6 +24,7 @@ wheels/
 MANIFEST
 
 # Virtual environments
+venv*/
 venv/
 env/
 ENV/
@@ -69,7 +70,6 @@ logs/
 *.joblib
 *.h5
 *.pb
-models/
 checkpoints/
 
 # Data files
