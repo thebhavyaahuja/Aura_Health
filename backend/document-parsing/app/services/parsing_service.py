@@ -111,8 +111,9 @@ class DocumentParsingService:
             
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{INFORMATION_STRUCTURING_URL}/api/v1/structure",
+                    "http://localhost:8003/structuring/structure",
                     json=payload,
+                    params={"api_key": "demo-api-key-123"},
                     timeout=30.0
                 )
                 

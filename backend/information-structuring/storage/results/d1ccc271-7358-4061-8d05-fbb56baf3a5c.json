@@ -1,0 +1,22 @@
+{
+  "indication": "Mastalgia",
+  "family_history_breast_pathology": "Unremarkable",
+  "clinical_exam_result": "Unremarkable",
+  "skin_abnormalities": "No",
+  "nipple_abnormalities": "No",
+  "gland_density": "Very denseglandluar tissue",
+  "calcifications_present": "unknown",
+  "architectural_distortion": "unknown",
+  "retracted_areas": "unknown",
+  "suspicious_lymph_nodes": "No",
+  "evaluation_possible": "No",
+  "findings_summary": "The skin and subcutaneous tissuee aru remakable. The nipple region is bilaterally unremarkable.Very denseglandluar tissue.Evaluation of focal findings is not possible. No suspicious lymph noes.",
+  "acr_density_type": "D",
+  "birads_score": "0",
+  "followup_recommended": "yes",
+  "recommendation_text": "Further evaluation correlationwithultrasound is recommended",
+  "lmp": "unknown",
+  "hormonal_therapy": "unknown",
+  "age": "unknown",
+  "children": "unknown"
+}
