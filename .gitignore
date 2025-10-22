@@ -77,7 +77,7 @@ data/
 datasets/
 uploads/
 temp/
-
+storage/
 # Jupyter Notebooks
 .ipynb_checkpoints
 
