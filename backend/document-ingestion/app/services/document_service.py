@@ -75,13 +75,20 @@ class DocumentService:
         self, 
         page: int = 1, 
         limit: int = 10, 
-        status: Optional[str] = None
+        status: Optional[str] = None,
+        uploader_id: Optional[str] = None
     ) -> tuple[List[Document], int]:
         """Get paginated list of documents"""
         query = self.db.query(Document)
         
         if status:
             query = query.filter(Document.status == status)
+        
+        if uploader_id:
+            query = query.filter(Document.uploader_id == uploader_id)
+        
+        # Order by created_at descending (newest first)
+        query = query.order_by(Document.created_at.desc())
         
         total = query.count()
         documents = query.offset((page - 1) * limit).limit(limit).all()
@@ -141,7 +148,7 @@ class DocumentService:
         return processing_status
     
     async def trigger_parsing_service(self, document_id: str, file_path: str) -> None:
-        """Trigger document parsing service"""
+        """Trigger document parsing service (internal service call, no auth needed)"""
         try:
             payload = {
                 "document_id": document_id,
@@ -149,10 +156,10 @@ class DocumentService:
             }
             
             async with httpx.AsyncClient() as client:
+                # Internal service call - no authentication required
                 response = await client.post(
-                    "http://localhost:8002/parsing/parse",
+                    "http://localhost:8002/parsing/parse-internal",
                     json=payload,
-                    params={"api_key": "demo-api-key-123"},
                     timeout=30.0
                 )
                 

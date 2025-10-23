@@ -16,6 +16,9 @@ httpx>=0.24.0
 # Data validation - let FastAPI handle pydantic version
 pydantic>=2.0.0
 
+# Authentication
+python-jose[cryptography]==3.3.0
+
 # Utilities
 python-dotenv>=1.0.0
 

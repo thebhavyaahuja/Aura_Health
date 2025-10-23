@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple script to run the Document Ingestion Service
+Run the Authentication Service locally
 """
 import uvicorn
 
@@ -8,7 +8,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
-        port=8001,
+        port=8010,
         reload=True,
         log_level="info"
     )

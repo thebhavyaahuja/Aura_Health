@@ -64,6 +64,9 @@ class DocumentParsingService:
             # Save parsed text to file
             await self.save_parsed_text(document_id, extracted_text)
             
+            # Update document-ingestion service about completion
+            await self.update_document_status(document_id, "parsed", "completed")
+            
             # Trigger information structuring service
             await self.trigger_structuring_service(document_id, extracted_text)
             
@@ -94,6 +97,9 @@ class DocumentParsingService:
                 self.db.commit()
                 self.db.refresh(error_result)
             
+            # Update document-ingestion service about failure
+            await self.update_document_status(document_id, "uploaded", "failed", str(e))
+            
             raise e
     
     async def save_parsed_text(self, document_id: str, text: str) -> None:
@@ -101,8 +107,43 @@ class DocumentParsingService:
         file_path = PARSED_DIR / f"{document_id}.md"
         file_path.write_text(text, encoding='utf-8')
     
+    async def update_document_status(
+        self, 
+        document_id: str, 
+        doc_status: str,
+        processing_status: str,
+        error_message: Optional[str] = None
+    ) -> None:
+        """Update document status in document-ingestion service"""
+        try:
+            payload = {
+                "document_id": document_id,
+                "service_name": "document_parsing",
+                "status": processing_status,
+                "error_message": error_message
+            }
+            
+            async with httpx.AsyncClient() as client:
+                # Update processing status
+                await client.post(
+                    "http://localhost:8001/documents/update-status-internal",
+                    json=payload,
+                    timeout=10.0
+                )
+                
+                # Update main document status
+                if doc_status:
+                    await client.patch(
+                        f"http://localhost:8001/documents/{document_id}/status-internal",
+                        json={"status": doc_status},
+                        timeout=10.0
+                    )
+                    
+        except Exception as e:
+            print(f"Warning: Failed to update document status: {str(e)}")
+    
     async def trigger_structuring_service(self, document_id: str, extracted_text: str) -> None:
-        """Trigger information structuring service"""
+        """Trigger information structuring service (internal service call, no auth needed)"""
         try:
             payload = {
                 "document_id": document_id,
@@ -110,10 +151,10 @@ class DocumentParsingService:
             }
             
             async with httpx.AsyncClient() as client:
+                # Internal service call - no authentication required
                 response = await client.post(
-                    "http://localhost:8003/structuring/structure",
+                    "http://localhost:8003/structuring/structure-internal",
                     json=payload,
-                    params={"api_key": "demo-api-key-123"},
                     timeout=30.0
                 )
                 

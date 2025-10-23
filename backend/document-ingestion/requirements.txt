@@ -19,6 +19,9 @@ Pillow==10.1.0
 # Data validation
 pydantic==2.5.0
 
+# Authentication
+python-jose[cryptography]==3.3.0
+
 # Utilities
 python-dotenv==1.0.0
 pathlib2==2.3.7
