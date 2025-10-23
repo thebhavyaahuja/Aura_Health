@@ -7,12 +7,21 @@
 help:
 	@echo "🩺 Mammography Report Analysis - Backend Services"
 	@echo ""
-	@echo "Available commands:"
+	@echo "Docker Commands:"
 	@echo "  build          Build all Docker images"
-	@echo "  up             Start all services"
-	@echo "  down           Stop all services"
+	@echo "  up             Start all services with Docker"
+	@echo "  down           Stop all Docker services"
 	@echo "  logs           Show logs for all services"
 	@echo "  clean          Clean up containers and volumes"
+	@echo ""
+	@echo "No-Docker Commands (uses setup_and_run.sh):"
+	@echo "  setup-local    Setup all services without Docker"
+	@echo "  start-local    Start all services without Docker"
+	@echo "  stop-local     Stop all local services"
+	@echo "  status-local   Show status of local services"
+	@echo "  logs-local     Show logs for local services"
+	@echo ""
+	@echo "Development Commands:"
 	@echo "  test           Run tests for all services"
 	@echo "  lint           Run linting for all services"
 	@echo "  format         Format code for all services"
@@ -24,6 +33,8 @@ help:
 	@echo "  logs-ingestion     Show logs for Document Ingestion"
 	@echo "  logs-parsing       Show logs for Document Parsing"
 	@echo "  logs-structuring   Show logs for Information Structuring"
+	@echo ""
+	@echo "📖 For detailed setup guide, see: SETUP_GUIDE.md"
 
 # Build all services
 build:
@@ -117,3 +128,25 @@ install-deps:
 		echo "Installing dependencies for $$service..."; \
 		cd $$service && pip install -r requirements.txt && cd ..; \
 	done
+
+# No-Docker commands using setup_and_run.sh
+setup-local:
+	@./setup_and_run.sh setup
+
+start-local:
+	@./setup_and_run.sh start
+
+stop-local:
+	@./setup_and_run.sh stop
+
+restart-local:
+	@./setup_and_run.sh restart
+
+status-local:
+	@./setup_and_run.sh status
+
+logs-local:
+	@./setup_and_run.sh logs
+
+clean-local:
+	@./setup_and_run.sh clean
