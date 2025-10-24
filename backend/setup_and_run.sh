@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # 🚀 Setup and Run Backend Services Without Docker
 # Mammography Report Analysis System
@@ -17,20 +17,49 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Service definitions with their ports and directories
-declare -A SERVICES=(
-    ["authentication"]="8010"
-    ["document-ingestion"]="8001"
-    ["document-parsing"]="8002"
-    ["information-structuring"]="8003"
-)
+# Using arrays instead of associative arrays for bash 3.2 compatibility
+SERVICES_NAMES=("authentication" "document-ingestion" "document-parsing" "information-structuring")
+SERVICES_PORTS=("8010" "8001" "8002" "8003")
 
-# Get the script directory
+# Helper function to get port for a service
+get_service_port() {
+    local service=$1
+    for i in "${!SERVICES_NAMES[@]}"; do
+        if [ "${SERVICES_NAMES[$i]}" = "$service" ]; then
+            echo "${SERVICES_PORTS[$i]}"
+            return 0
+        fi
+    done
+    echo ""
+}
+
+# Helper function to get index of a service
+get_service_index() {
+    local service=$1
+    for i in "${!SERVICES_NAMES[@]}"; do
+        if [ "${SERVICES_NAMES[$i]}" = "$service" ]; then
+            echo "$i"
+            return 0
+        fi
+    done
+    echo "-1"
+}
+
+# Get the script directory (works on both Linux and macOS)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$SCRIPT_DIR"
 
 # Log file
 LOG_DIR="$BACKEND_DIR/logs"
 mkdir -p "$LOG_DIR"
+
+# Detect OS
+OS_TYPE="$(uname -s)"
+case "${OS_TYPE}" in
+    Linux*)     OS_NAME=Linux;;
+    Darwin*)    OS_NAME=Mac;;
+    *)          OS_NAME="UNKNOWN:${OS_TYPE}"
+esac
 
 # Function to print colored messages
 print_message() {
@@ -50,15 +79,30 @@ print_header() {
 
 # Function to check if Python 3 is installed
 check_python() {
-    print_header "🐍 Checking Python Installation"
+    print_header "🐍 Checking Python Installation (${OS_NAME})"
     
     if command -v python3 &> /dev/null; then
         PYTHON_VERSION=$(python3 --version)
         print_message "$GREEN" "✅ Python found: $PYTHON_VERSION"
+        
+        # Check Python version (need 3.8+)
+        PYTHON_MAJOR=$(python3 -c 'import sys; print(sys.version_info.major)')
+        PYTHON_MINOR=$(python3 -c 'import sys; print(sys.version_info.minor)')
+        
+        if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 8 ]; }; then
+            print_message "$RED" "❌ Python 3.8 or higher is required!"
+            print_message "$YELLOW" "Current version: Python $PYTHON_MAJOR.$PYTHON_MINOR"
+            exit 1
+        fi
+        
         return 0
     else
         print_message "$RED" "❌ Python 3 is not installed!"
-        print_message "$YELLOW" "Please install Python 3.8 or higher"
+        if [ "$OS_NAME" == "Mac" ]; then
+            print_message "$YELLOW" "Install using: brew install python@3.11"
+        else
+            print_message "$YELLOW" "Please install Python 3.8 or higher"
+        fi
         exit 1
     fi
 }
@@ -71,7 +115,11 @@ check_pip() {
         return 0
     else
         print_message "$RED" "❌ pip3 is not installed!"
-        print_message "$YELLOW" "Please install pip3"
+        if [ "$OS_NAME" == "Mac" ]; then
+            print_message "$YELLOW" "Install using: python3 -m ensurepip --upgrade"
+        else
+            print_message "$YELLOW" "Please install pip3"
+        fi
         exit 1
     fi
 }
@@ -120,6 +168,7 @@ install_dependencies() {
         print_message "$GREEN" "   ✅ Dependencies installed successfully"
     else
         print_message "$RED" "   ❌ Failed to install dependencies"
+        deactivate
         exit 1
     fi
     
@@ -147,27 +196,39 @@ setup_service() {
 setup_all_services() {
     print_header "🛠️  Setting Up All Backend Services"
     
-    for service in "${!SERVICES[@]}"; do
+    for service in "${SERVICES_NAMES[@]}"; do
         setup_service "$service"
     done
     
     print_message "$GREEN" "\n✅ All services setup complete!"
 }
 
-# Function to check if a port is in use
+# Function to check if a port is in use (Mac-compatible)
 check_port() {
     local port=$1
-    if lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; then
-        return 0  # Port is in use
+    if [ "$OS_NAME" == "Mac" ]; then
+        # macOS-specific lsof command
+        lsof -nP -iTCP:$port -sTCP:LISTEN >/dev/null 2>&1
     else
-        return 1  # Port is free
+        # Linux lsof command
+        lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1
+    fi
+}
+
+# Function to get PID on a port (Mac-compatible)
+get_port_pid() {
+    local port=$1
+    if [ "$OS_NAME" == "Mac" ]; then
+        lsof -nP -iTCP:$port -sTCP:LISTEN -t 2>/dev/null | head -n 1
+    else
+        lsof -ti:$port 2>/dev/null
     fi
 }
 
 # Function to kill process on a port
 kill_port() {
     local port=$1
-    local pid=$(lsof -ti:$port)
+    local pid=$(get_port_pid $port)
     if [ ! -z "$pid" ]; then
         print_message "$YELLOW" "   Killing process $pid on port $port"
         kill -9 $pid 2>/dev/null || true
@@ -178,7 +239,7 @@ kill_port() {
 # Function to run a service
 run_service() {
     local service=$1
-    local port=${SERVICES[$service]}
+    local port=$(get_service_port "$service")
     local service_dir="$BACKEND_DIR/$service"
     local venv_dir="$service_dir/venv"
     local log_file="$LOG_DIR/$service.log"
@@ -209,11 +270,27 @@ run_service() {
     # Check if run.py exists
     if [ -f "run.py" ]; then
         source "$venv_dir/bin/activate"
-        nohup python3 run.py > "$log_file" 2>&1 &
+        
+        # Different nohup approach for macOS
+        if [ "$OS_NAME" == "Mac" ]; then
+            nohup python3 run.py >> "$log_file" 2>&1 &
+        else
+            nohup python3 run.py > "$log_file" 2>&1 &
+        fi
+        
         local pid=$!
         echo $pid > "$LOG_DIR/$service.pid"
-        print_message "$GREEN" "   ✅ Started with PID: $pid"
-        print_message "$CYAN" "   📋 Logs: $log_file"
+        
+        # Wait a moment and verify the process started
+        sleep 1
+        if ps -p $pid > /dev/null 2>&1; then
+            print_message "$GREEN" "   ✅ Started with PID: $pid"
+            print_message "$CYAN" "   📋 Logs: $log_file"
+        else
+            print_message "$RED" "   ❌ Failed to start $service"
+            print_message "$YELLOW" "   Check logs: $log_file"
+        fi
+        
         deactivate
     else
         print_message "$RED" "   ❌ run.py not found for $service"
@@ -225,13 +302,9 @@ run_all_services() {
     print_header "🚀 Starting All Backend Services"
     
     # Start services in order (authentication first, then others)
-    local services_order=("authentication" "document-ingestion" "document-parsing" "information-structuring")
-    
-    for service in "${services_order[@]}"; do
-        if [[ -v SERVICES[$service] ]]; then
-            run_service "$service"
-            sleep 2  # Wait a bit before starting next service
-        fi
+    for service in "${SERVICES_NAMES[@]}"; do
+        run_service "$service"
+        sleep 2  # Wait a bit before starting next service
     done
     
     print_message "$GREEN" "\n✅ All services started!"
@@ -242,7 +315,7 @@ run_all_services() {
 stop_all_services() {
     print_header "🛑 Stopping All Backend Services"
     
-    for service in "${!SERVICES[@]}"; do
+    for service in "${SERVICES_NAMES[@]}"; do
         local pid_file="$LOG_DIR/$service.pid"
         
         if [ -f "$pid_file" ]; then
@@ -263,7 +336,7 @@ stop_all_services() {
             fi
         else
             # Try to kill by port
-            local port=${SERVICES[$service]}
+            local port=$(get_service_port "$service")
             if check_port $port; then
                 kill_port $port
                 print_message "$GREEN" "   ✅ Stopped process on port $port"
@@ -276,13 +349,14 @@ stop_all_services() {
 
 # Function to show status of all services
 print_services_status() {
-    print_header "📊 Services Status"
+    print_header "📊 Services Status (${OS_NAME})"
     
     printf "%-30s %-10s %-10s %-10s\n" "SERVICE" "PORT" "STATUS" "PID"
     printf "%-30s %-10s %-10s %-10s\n" "-------" "----" "------" "---"
     
-    for service in "${!SERVICES[@]}"; do
-        local port=${SERVICES[$service]}
+    for i in "${!SERVICES_NAMES[@]}"; do
+        local service="${SERVICES_NAMES[$i]}"
+        local port="${SERVICES_PORTS[$i]}"
         local pid_file="$LOG_DIR/$service.pid"
         local status="❌ Stopped"
         local pid="-"
@@ -297,7 +371,7 @@ print_services_status() {
             fi
         elif check_port $port; then
             status="✅ Running"
-            pid=$(lsof -ti:$port)
+            pid=$(get_port_pid $port)
         fi
         
         printf "%-30s %-10s %-10s %-10s\n" "$service" "$port" "$status" "$pid"
@@ -305,8 +379,9 @@ print_services_status() {
     
     echo ""
     print_message "$CYAN" "Endpoints:"
-    for service in "${!SERVICES[@]}"; do
-        local port=${SERVICES[$service]}
+    for i in "${!SERVICES_NAMES[@]}"; do
+        local service="${SERVICES_NAMES[$i]}"
+        local port="${SERVICES_PORTS[$i]}"
         echo "  • $service: http://localhost:$port"
     done
 }
@@ -319,7 +394,7 @@ tail_logs() {
     if [ -z "$service" ]; then
         print_message "$YELLOW" "Usage: $0 logs <service-name>"
         echo "Available services:"
-        for s in "${!SERVICES[@]}"; do
+        for s in "${SERVICES_NAMES[@]}"; do
             echo "  • $s"
         done
         return
@@ -340,7 +415,7 @@ tail_logs() {
 show_all_logs() {
     print_header "📋 Recent Logs for All Services"
     
-    for service in "${!SERVICES[@]}"; do
+    for service in "${SERVICES_NAMES[@]}"; do
         local log_file="$LOG_DIR/$service.log"
         if [ -f "$log_file" ]; then
             print_message "$MAGENTA" "\n━━━ $service ━━━"
@@ -371,7 +446,7 @@ cleanup() {
     
     # Remove virtual environments
     print_message "$YELLOW" "Removing virtual environments..."
-    for service in "${!SERVICES[@]}"; do
+    for service in "${SERVICES_NAMES[@]}"; do
         local venv_dir="$BACKEND_DIR/$service/venv"
         if [ -d "$venv_dir" ]; then
             rm -rf "$venv_dir"
@@ -391,6 +466,8 @@ cleanup() {
 show_help() {
     print_header "🩺 Mammography Report Analysis - Backend Services (No Docker)"
     
+    print_message "$GREEN" "Detected OS: ${OS_NAME}"
+    echo ""
     echo "Usage: $0 [command] [options]"
     echo ""
     echo "Commands:"
@@ -410,11 +487,20 @@ show_help() {
     echo "  $0 status                   # Check status of all services"
     echo ""
     echo "Available Services:"
-    for service in "${!SERVICES[@]}"; do
-        local port=${SERVICES[$service]}
+    for i in "${!SERVICES_NAMES[@]}"; do
+        local service="${SERVICES_NAMES[$i]}"
+        local port="${SERVICES_PORTS[$i]}"
         echo "  • $service (Port: $port)"
     done
     echo ""
+    
+    if [ "$OS_NAME" == "Mac" ]; then
+        print_message "$YELLOW" "📝 macOS Tips:"
+        echo "  • Make script executable: chmod +x setup_and_run.sh"
+        echo "  • Install Python: brew install python@3.11"
+        echo "  • Check ports: lsof -nP -iTCP -sTCP:LISTEN"
+        echo ""
+    fi
 }
 
 # Main script logic

@@ -1,7 +1,12 @@
 """
 File validation utilities
 """
-import magic
+try:
+    import magic
+    MAGIC_AVAILABLE = True
+except (ImportError, OSError):
+    MAGIC_AVAILABLE = False
+    
 from pathlib import Path
 from typing import Tuple, Optional
 from fastapi import UploadFile, HTTPException
@@ -27,19 +32,30 @@ def validate_file_extension(filename: str) -> None:
         )
 
 def validate_file_content(file: UploadFile) -> Tuple[str, str]:
-    """Validate file content using magic numbers"""
+    """Validate file content using magic numbers (if available)"""
     # Read first 1024 bytes for magic number detection
     content = file.file.read(1024)
     file.file.seek(0)  # Reset file pointer
     
-    # Detect MIME type
-    mime_type = magic.from_buffer(content, mime=True)
-    
-    if mime_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File content not allowed. Detected type: {mime_type}"
-        )
+    if MAGIC_AVAILABLE:
+        # Detect MIME type using libmagic
+        mime_type = magic.from_buffer(content, mime=True)
+        
+        if mime_type not in ALLOWED_MIME_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File content not allowed. Detected type: {mime_type}"
+            )
+    else:
+        # Fall back to checking file extension
+        mime_type = "application/octet-stream"  # Generic binary
+        if file.filename:
+            if file.filename.lower().endswith('.pdf'):
+                mime_type = "application/pdf"
+            elif file.filename.lower().endswith(('.jpg', '.jpeg')):
+                mime_type = "image/jpeg"
+            elif file.filename.lower().endswith('.png'):
+                mime_type = "image/png"
     
     return mime_type, content
 
