@@ -37,6 +37,7 @@ MODEL_NAME = "microsoft/biogpt-large"
 TEST_SIZE = 0.2  # 20% of data for testing
 RANDOM_STATE = 42 # For reproducible results
 OUTPUT_DIR = "./biogpt_birads_classifier"
+HUGGINGFACE_REPO = "ishro/biogpt-aura"  # HuggingFace repository to push model to
 
 # Set verbosity to 'info' to see progress bars (like tqdm)
 hf_logging.set_verbosity_info()
@@ -249,7 +250,7 @@ def train_model(
     
     print("--- Training Complete ---")
     
-    # Save the final best model
+    # Save the final best model locally
     trainer.save_model(f"{OUTPUT_DIR}/best_model")
     print(f"Best model saved to {OUTPUT_DIR}/best_model")
     
@@ -296,6 +297,40 @@ def evaluate_and_predict(trainer, test_df, tokenized_test, id2label):
     print(f"Predicted BI-RADS: {test_df.iloc[0]['predicted_birads']}")
 
 
+def push_to_huggingface(trainer, tokenizer):
+    """
+    Push the trained model to HuggingFace Hub.
+    You need to be logged in to HuggingFace CLI before running this.
+    Run: huggingface-cli login
+    """
+    print("\n--- Step 6: Pushing Model to HuggingFace Hub ---")
+    print(f"Repository: {HUGGINGFACE_REPO}")
+    
+    try:
+        # Push the best model to HuggingFace
+        print("Pushing model...")
+        trainer.model.push_to_hub(HUGGINGFACE_REPO)
+        
+        print("Pushing tokenizer...")
+        tokenizer.push_to_hub(HUGGINGFACE_REPO)
+        
+        # Also push all checkpoints (optional - contains training history)
+        print("\nPushing all training checkpoints...")
+        trainer.push_to_hub(HUGGINGFACE_REPO, commit_message="Upload all training checkpoints")
+        
+        print(f"\n✓ Successfully pushed model to: https://huggingface.co/{HUGGINGFACE_REPO}")
+        print(f"✓ The model can now be loaded with: BioGptForSequenceClassification.from_pretrained('{HUGGINGFACE_REPO}')")
+        
+    except Exception as e:
+        print(f"\n✗ Failed to push model to HuggingFace: {e}")
+        print("\nTroubleshooting:")
+        print("1. Make sure you're logged in: huggingface-cli login")
+        print("2. Check that the repository exists or you have permission to create it")
+        print("3. Verify your internet connection")
+        print("\nThe model is still saved locally at:", f"{OUTPUT_DIR}/best_model")
+        raise
+
+
 def main():
     # Step 1: Load and process data
     df, label2id, id2label, num_labels = load_and_preprocess_data()
@@ -325,6 +360,14 @@ def main():
     
     # Step 5: Evaluate and show predictions
     evaluate_and_predict(trainer, test_df.copy(), tokenized_test, id2label)
+    
+    # Step 6: Push to HuggingFace Hub
+    print("\n" + "="*60)
+    push_choice = input("Do you want to push the model to HuggingFace? (yes/no): ").strip().lower()
+    if push_choice in ['yes', 'y']:
+        push_to_huggingface(trainer, tokenizer)
+    else:
+        print("Skipping HuggingFace push. Model is saved locally at:", f"{OUTPUT_DIR}/best_model")
 
 if __name__ == "__main__":
     main()

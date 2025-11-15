@@ -96,6 +96,7 @@ dmypy.json
 # MLflow
 mlruns/
 mlartifacts/
+backend/model-training/*.json
 
 # Temporary files
 tmp/
