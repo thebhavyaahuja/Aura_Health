@@ -28,9 +28,11 @@ export default function SuperAdminPage() {
   const [pipelineData, setPipelineData] = useState<PipelineData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string>("")
+  const [modelInfo, setModelInfo] = useState<{loaded: boolean, path: string}>({loaded: false, path: "Unknown"})
 
   useEffect(() => {
     loadDocuments()
+    loadModelInfo()
   }, [])
 
   const loadDocuments = async () => {
@@ -44,6 +46,21 @@ export default function SuperAdminPage() {
     } catch (err) {
       console.error("Failed to load documents:", err)
       setError("Failed to load documents")
+    }
+  }
+
+  const loadModelInfo = async () => {
+    try {
+      const response = await fetch('http://localhost:8004/health/')
+      if (response.ok) {
+        const data = await response.json()
+        setModelInfo({
+          loaded: data.model_loaded || false,
+          path: data.model_path || "Unknown"
+        })
+      }
+    } catch (err) {
+      console.error("Failed to load model info:", err)
     }
   }
 
@@ -228,7 +245,13 @@ export default function SuperAdminPage() {
                       <div><span className="text-green-600">GET</span> /predictions/document/{`{id}`}</div>
                       <div><span className="text-orange-600">PATCH</span> /predictions/{`{id}`}/review</div>
                     </div>
-                    <div className="mt-2 text-xs text-muted-foreground">Model: BioGPT (microsoft/biogpt)</div>
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      Model: {modelInfo.loaded ? (
+                        <span className="font-medium text-green-600 dark:text-green-400">{modelInfo.path}</span>
+                      ) : (
+                        <span className="text-red-600 dark:text-red-400">Not loaded</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -457,7 +480,11 @@ export default function SuperAdminPage() {
                         <span className="text-muted-foreground ml-auto">Update review status</span>
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
-                        Service: <span className="font-medium">risk-prediction</span> (Port 8004) | Model: <span className="font-medium">BioGPT (microsoft/biogpt)</span>
+                        Service: <span className="font-medium">risk-prediction</span> (Port 8004) | Model: {modelInfo.loaded ? (
+                          <span className="font-medium text-green-600 dark:text-green-400">{modelInfo.path}</span>
+                        ) : (
+                          <span className="text-red-600 dark:text-red-400">Not loaded</span>
+                        )}
                       </div>
                     </div>
                   </div>

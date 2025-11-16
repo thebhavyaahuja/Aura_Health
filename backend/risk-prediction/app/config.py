@@ -12,7 +12,8 @@ PORT = 8004
 # Model Configuration
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# HuggingFace Model Configuration
+# HuggingFace Model Configuration (RECOMMENDED)
+# Set USE_HUGGINGFACE_MODEL=false to use local model instead
 HUGGINGFACE_MODEL_REPO = os.getenv("HUGGINGFACE_MODEL_REPO", "ishro/biogpt-aura")
 USE_HUGGINGFACE_MODEL = os.getenv("USE_HUGGINGFACE_MODEL", "true").lower() == "true"
 
