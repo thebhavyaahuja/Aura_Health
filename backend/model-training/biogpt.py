@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import torch
 import sys
+import os
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score
 from datasets import Dataset
@@ -13,8 +14,31 @@ from transformers import (
     logging as hf_logging,
 )
 
+# --- GPU and CUDA Optimizations ---
+# Set CUDA environment variables for optimal performance
+os.environ['CUDA_LAUNCH_BLOCKING'] = '0'  # Async execution for better performance
+os.environ['TORCH_CUDA_ARCH_LIST'] = '8.9'  # L40S compute capability
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True,max_split_size_mb:512'
+
+# Enable TF32 for faster operations on Ampere+ GPUs (L40S is Ada Lovelace)
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+torch.backends.cudnn.benchmark = True  # Auto-tune kernels for better performance
+
+# Check GPU availability
+if torch.cuda.is_available():
+    print(f"CUDA Available: {torch.cuda.is_available()}")
+    print(f"CUDA Version: {torch.version.cuda}")
+    print(f"Number of GPUs: {torch.cuda.device_count()}")
+    for i in range(torch.cuda.device_count()):
+        print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+        print(f"  Memory: {torch.cuda.get_device_properties(i).total_memory / 1024**3:.2f} GB")
+else:
+    print("WARNING: CUDA is not available. Training will be slow on CPU.")
+
+
 # --- Configuration ---
-FILE_NAME = "radiology_reports.csv"
+FILE_NAME = "radiology_reports_eng.csv"
 DELIMITER = ";"
 
 # --- Feature Configuration ---
@@ -41,6 +65,19 @@ HUGGINGFACE_REPO = "ishro/biogpt-aura"  # HuggingFace repository to push model t
 
 # Set verbosity to 'info' to see progress bars (like tqdm)
 hf_logging.set_verbosity_info()
+
+def print_gpu_memory():
+    """Print current GPU memory usage for all available GPUs."""
+    if torch.cuda.is_available():
+        print("\n--- GPU Memory Usage ---")
+        for i in range(torch.cuda.device_count()):
+            allocated = torch.cuda.memory_allocated(i) / 1024**3
+            reserved = torch.cuda.memory_reserved(i) / 1024**3
+            total = torch.cuda.get_device_properties(i).total_memory / 1024**3
+            print(f"GPU {i} ({torch.cuda.get_device_name(i)}):")
+            print(f"  Allocated: {allocated:.2f} GB / {total:.2f} GB ({allocated/total*100:.1f}%)")
+            print(f"  Reserved:  {reserved:.2f} GB / {total:.2f} GB ({reserved/total*100:.1f}%)")
+        print()
 
 def load_and_preprocess_data():
     """
@@ -112,16 +149,22 @@ def load_and_preprocess_data():
     unique_labels = [int(label) for label in unique_labels]
     
     # Create the label mappings required by the model
-    # Model needs labels to be 0, 1, 2, 3...
+    # Model needs labels to be 0, 1, 2, 3... (SEQUENTIAL, not the original values)
     label2id = {label: i for i, label in enumerate(unique_labels)}
     id2label = {i: label for label, i in label2id.items()}
     num_labels = len(unique_labels)
     
     print(f"Found {num_labels} unique BI-RADS labels: {unique_labels}")
     print(f"Mapped labels to integers: {label2id}")
+    print(f"Example: BI-RADS {unique_labels[0]} -> model label {label2id[unique_labels[0]]}")
     
-    # Create the final 'label' column with integer IDs
+    # Create the final 'label' column with integer IDs (0 to num_labels-1)
     df['label'] = df[TARGET_COLUMN].map(label2id)
+    
+    # CRITICAL: Verify all labels are valid
+    assert df['label'].min() >= 0, f"Label minimum is {df['label'].min()}, should be >= 0"
+    assert df['label'].max() < num_labels, f"Label maximum is {df['label'].max()}, should be < {num_labels}"
+    print(f"✓ Label validation passed: min={df['label'].min()}, max={df['label'].max()}, num_labels={num_labels}")
     
     # Keep only the columns we need
     # We also keep TARGET_COLUMN for the final evaluation comparison
@@ -143,12 +186,18 @@ def tokenize_data(train_df, test_df):
     def tokenize_function(examples):
         # Truncate to the model's max input size
         # The new metadata text will take up some of the 512 tokens
-        return tokenizer(
+        tokenized = tokenizer(
             examples['text'], 
             padding="max_length", 
             truncation=True, 
             max_length=512
         )
+        # Add sequence length for efficient batching
+        tokenized['length'] = [
+            sum(1 for token_id in input_ids if token_id != tokenizer.pad_token_id)
+            for input_ids in tokenized['input_ids']
+        ]
+        return tokenized
 
     print("Tokenizing datasets...")
     # Convert pandas DataFrames to Hugging Face Dataset objects
@@ -175,6 +224,10 @@ def tokenize_data(train_df, test_df):
     # Set format for PyTorch
     tokenized_train.set_format("torch")
     tokenized_test.set_format("torch")
+
+    print(f"✓ Tokenization complete")
+    print(f"  - Train samples: {len(tokenized_train)}")
+    print(f"  - Test samples: {len(tokenized_test)}")
 
     return tokenized_train, tokenized_test, tokenizer
 
@@ -203,7 +256,7 @@ def train_model(
     label2id
 ):
     """
-    Loads the model and runs the training.
+    Loads the model and runs the training with multi-GPU optimization.
     """
     print(f"--- Step 3: Loading Model ({MODEL_NAME}) ---")
     
@@ -213,26 +266,78 @@ def train_model(
         num_labels=num_labels,
         id2label=id2label,
         label2id=label2id,
-        pad_token_id=tokenizer.eos_token_id # Set pad token
+        pad_token_id=tokenizer.eos_token_id, # Set pad token
+        problem_type="single_label_classification",  # Explicitly set problem type
+        ignore_mismatched_sizes=True  # Allow size mismatches for classification head
     )
     
-    # Define Training Arguments
-    # These can be tuned for better performance
+    # Ensure pad_token_id is properly set in config
+    model.config.pad_token_id = tokenizer.eos_token_id
+    
+    # Enable gradient checkpointing to save memory
+    model.gradient_checkpointing_enable()
+    print("✓ Gradient checkpointing enabled")
+    
+    # Define Training Arguments with multi-GPU optimizations
     training_args = TrainingArguments(
         output_dir=OUTPUT_DIR,
         num_train_epochs=3,           # 3 epochs is a good start
         learning_rate=2e-5,           # Standard learning rate for fine-tuning
-        per_device_train_batch_size=4,# Lower this if you get "Out of Memory" errors
-        per_device_eval_batch_size=4,
+        
+        # --- Multi-GPU Configuration ---
+        per_device_train_batch_size=4,   # Further reduced to avoid OOM
+        per_device_eval_batch_size=4,    # Reduced to match training batch size
+        gradient_accumulation_steps=8,   # Increased to maintain effective batch size = 4 * 8 * 2 GPUs = 64
+        
+        # --- Mixed Precision Training ---
+        fp16=False,                      # Disable FP16
+        bf16=True,                       # Use BF16 for better stability on L40S
+        bf16_full_eval=True,             # Use BF16 for evaluation too
+        
+        # --- Memory Optimizations ---
+        gradient_checkpointing=True,     # Recompute activations to save memory
+        optim="adamw_torch_fused",       # Fused optimizer for faster training
+        
+        # --- DataLoader Settings ---
+        dataloader_num_workers=4,        # Parallel data loading
+        dataloader_pin_memory=True,      # Faster data transfer to GPU
+        dataloader_prefetch_factor=2,    # Prefetch batches
+        
+        # --- Evaluation & Saving ---
         weight_decay=0.01,
-        eval_strategy="epoch",  # Evaluate at the end of each epoch
+        eval_strategy="no",              # DISABLE eval during training to save memory
         save_strategy="epoch",
-        logging_strategy="steps", # Log training loss at steps
-        logging_steps=10,         # Log every 10 steps
-        load_best_model_at_end=True,  # Saves the best model
-        metric_for_best_model="f1_macro",
-        push_to_hub=False,
+        logging_strategy="steps",
+        logging_steps=10,
+        logging_first_step=True,
+        load_best_model_at_end=False,    # Can't load best model without eval
+        save_total_limit=1,              # Keep only 1 checkpoint to save memory
+        eval_accumulation_steps=1,       # Process eval in smaller chunks to avoid OOM
+        eval_do_concat_batches=False,    # Don't concatenate eval batches in memory
+        
+        # --- Performance Settings ---
+        ddp_find_unused_parameters=False, # Faster DDP
+        ddp_backend="nccl",               # Use NCCL for multi-GPU
+        local_rank=-1,                    # Let Trainer handle device placement
+        group_by_length=False,            # Disable to avoid index issues with variable lengths
+        remove_unused_columns=True,       # Remove non-model columns
+        dataloader_drop_last=True,        # Drop incomplete batches to avoid size mismatches
+        
+        # --- HuggingFace Hub ---
+        push_to_hub=True,
+        
+        # --- Reporting ---
+        report_to=["tensorboard"],        # Enable tensorboard logging
+        disable_tqdm=False,               # Keep progress bars
     )
+    
+    print(f"✓ Training configuration:")
+    print(f"  - Number of GPUs: {torch.cuda.device_count()}")
+    print(f"  - Per device batch size: {training_args.per_device_train_batch_size}")
+    print(f"  - Gradient accumulation steps: {training_args.gradient_accumulation_steps}")
+    print(f"  - Effective batch size: {training_args.per_device_train_batch_size * training_args.gradient_accumulation_steps * torch.cuda.device_count()}")
+    print(f"  - Mixed precision: BF16")
+    print(f"  - Optimizer: {training_args.optim}")
     
     # Initialize the Trainer
     trainer = Trainer(
@@ -246,7 +351,19 @@ def train_model(
 
     print("--- Step 4: Starting Model Training ---")
     print("This may take a while depending on your data size and GPU...")
+    
+    # Clear CUDA cache before training
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        print("✓ CUDA cache cleared before training")
+        print_gpu_memory()
+        
     trainer.train()
+    
+    # Clear cache after training
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        print("✓ CUDA cache cleared after training")
     
     print("--- Training Complete ---")
     
@@ -262,16 +379,25 @@ def evaluate_and_predict(trainer, test_df, tokenized_test, id2label):
     """
     print("--- Step 5: Evaluating Model on Test Set ---")
     
+    # Clear cache before evaluation
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        print("✓ CUDA cache cleared before evaluation")
+    
     # Get final metrics from the test set
     eval_results = trainer.evaluate()
     print("\n--- Final Test Set Metrics ---")
     for key, value in eval_results.items():
         print(f"{key}: {value:.4f}")
+    
+    # Clear cache after evaluation
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
         
     # --- Show Predictions ---
     print("\n--- Example Predictions ---")
     
-    # Get model outputs (logits)
+    # Get model outputs (logits) - this might use a lot of memory
     predictions = trainer.predict(tokenized_test)
     raw_scores = predictions.predictions
     
@@ -280,6 +406,11 @@ def evaluate_and_predict(trainer, test_df, tokenized_test, id2label):
     
     # Map IDs back to original BI-RADS labels
     predicted_labels = [id2label[label_id] for label_id in predicted_label_ids]
+    
+    # Clean up large arrays
+    del raw_scores
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     
     # Add predictions to our original test DataFrame
     # Note: test_df was created with .copy(), so this is safe
@@ -332,6 +463,29 @@ def push_to_huggingface(trainer, tokenizer):
 
 
 def main():
+    # Print initial GPU status
+    print_gpu_memory()
+    
+    # Force single GPU mode to avoid DataParallel issues
+    # Use Accelerate or torchrun for proper multi-GPU training
+    if torch.cuda.device_count() > 1:
+        print("\n" + "="*60)
+        print("⚠️  WARNING: Multiple GPUs detected")
+        print("="*60)
+        print("The current error occurs with PyTorch DataParallel.")
+        print("\nFor multi-GPU training, please use one of these methods:")
+        print("\n1. Use Accelerate (RECOMMENDED):")
+        print("   accelerate launch biogpt.py")
+        print("\n2. Use torchrun:")
+        print("   torchrun --nproc_per_node=2 biogpt.py")
+        print("\n3. Run on single GPU:")
+        print("   CUDA_VISIBLE_DEVICES=0 python biogpt.py")
+        print("\nFor now, running on GPU 0 only...")
+        print("="*60 + "\n")
+        
+        # Use only first GPU to avoid DataParallel
+        os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    
     # Step 1: Load and process data
     df, label2id, id2label, num_labels = load_and_preprocess_data()
     
@@ -349,6 +503,7 @@ def main():
     )
     
     # Step 3 & 4: Train
+    print_gpu_memory()
     trainer = train_model(
         tokenized_train, 
         tokenized_test, 
@@ -357,6 +512,9 @@ def main():
         id2label, 
         label2id
     )
+    
+    # Print GPU usage after training
+    print_gpu_memory()
     
     # Step 5: Evaluate and show predictions
     evaluate_and_predict(trainer, test_df.copy(), tokenized_test, id2label)
@@ -368,6 +526,13 @@ def main():
         push_to_huggingface(trainer, tokenizer)
     else:
         print("Skipping HuggingFace push. Model is saved locally at:", f"{OUTPUT_DIR}/best_model")
+    
+    # Final memory cleanup
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        print("\n✓ CUDA cache cleared")
+        print_gpu_memory()
+
 
 if __name__ == "__main__":
     main()
