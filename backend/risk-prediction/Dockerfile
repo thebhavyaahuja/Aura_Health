@@ -22,7 +22,8 @@ ENV HUGGINGFACE_MODEL_REPO=ishro/biogpt-aura
 ENV USE_HUGGINGFACE_MODEL=true
 
 # Download model during build time with progress indication
-RUN python download_model.py
+# Use unbuffered Python output to see progress in Docker build logs
+RUN python -u download_model.py
 
 ENV PYTHONUNBUFFERED=1
 

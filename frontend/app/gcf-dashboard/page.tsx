@@ -25,6 +25,8 @@ interface ReportRecord {
   predictedBirads: string
   confidence: number
   reviewStatus: "New" | "Under Review" | "Follow-up Initiated" | "Review Complete"
+  processingStatus: string
+  processingMessage?: string
 }
 
 export default function GCFDashboardPage() {
@@ -116,6 +118,20 @@ export default function GCFDashboardPage() {
             console.error(`Failed to load prediction for document ${doc.upload_id}:`, err)
           }
           
+          // Get processing status message
+          let processingStatus = doc.status
+          let processingMessage = ""
+          
+          if (doc.status === "uploaded") {
+            processingMessage = "📄 Parsing text from document... This may take 1-2 minutes."
+          } else if (doc.status === "parsed") {
+            processingMessage = "✅ Text extracted - Analyzing medical content..."
+          } else if (doc.status === "structured") {
+            processingMessage = "🔬 Data structured - Running AI risk prediction..."
+          } else if (doc.status === "failed" && doc.error) {
+            processingMessage = `❌ Error: ${doc.error}`
+          }
+
           return {
             id: doc.upload_id,
             documentId: doc.upload_id,
@@ -127,6 +143,8 @@ export default function GCFDashboardPage() {
             predictedBirads,
             confidence,
             reviewStatus: (prediction?.review_status as "New" | "Under Review" | "Follow-up Initiated" | "Review Complete") || "New",
+            processingStatus,
+            processingMessage,
           }
         })
       )
@@ -356,14 +374,32 @@ export default function GCFDashboardPage() {
                           className="border-b border-border hover:bg-muted/50 dark:hover:bg-primary/5 transition-colors"
                         >
                           <td className="py-3 px-4">
-                            <span className={getRiskBadgeClass(report.riskScore)}>{report.riskScore}</span>
+                            <div className="flex flex-col gap-1">
+                              <span className={getRiskBadgeClass(report.riskScore)}>{report.riskScore}</span>
+                              {report.riskScore === "Pending" && report.processingMessage && (
+                                <span className="text-xs text-muted-foreground">
+                                  {report.processingMessage}
+                                </span>
+                              )}
+                              {report.processingStatus === "failed" && report.processingMessage && (
+                                <span className="text-xs text-destructive">
+                                  {report.processingMessage}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="py-3 px-4 font-mono text-foreground">
-                            {report.predictedBirads}
-                            {report.confidence > 0 && (
-                              <span className="text-xs text-muted-foreground ml-1">
-                                ({(report.confidence * 100).toFixed(1)}%)
-                              </span>
+                            {report.riskScore === "Pending" ? (
+                              <span className="text-muted-foreground italic">Processing...</span>
+                            ) : (
+                              <>
+                                {report.predictedBirads}
+                                {report.confidence > 0 && (
+                                  <span className="text-xs text-muted-foreground ml-1">
+                                    ({(report.confidence * 100).toFixed(1)}%)
+                                  </span>
+                                )}
+                              </>
                             )}
                           </td>
                           <td className="py-3 px-4 text-foreground truncate max-w-xs" title={report.filename}>
@@ -378,7 +414,8 @@ export default function GCFDashboardPage() {
                             <Button
                               size="sm"
                               onClick={() => handleViewDetails(report)}
-                              className="bg-primary hover:bg-primary/90 text-primary-foreground glow-primary"
+                              disabled={report.riskScore === "Pending"}
+                              className="bg-primary hover:bg-primary/90 text-primary-foreground glow-primary disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               View Details
                             </Button>

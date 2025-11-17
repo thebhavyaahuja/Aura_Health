@@ -29,10 +29,7 @@ def get_converter():
         pipeline_options.do_table_structure = False  # Disable - significant speedup
         pipeline_options.generate_page_images = False  # Disable - saves memory & time
         pipeline_options.generate_picture_images = False  # Disable - saves memory & time
-        
-        # Additional optimizations
         pipeline_options.images_scale = 1.0  # Don't upscale images
-        pipeline_options.generate_picture_crops = False  # Skip picture cropping
         
         # Create converter with optimized options
         _converter_instance = DocumentConverter(

@@ -146,10 +146,31 @@ export default function ClinicPortalPage() {
         return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
       case "structured":
         return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400"
+      case "predicted":
+        return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
       case "failed":
         return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
       default:
         return "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400"
+    }
+  }
+
+  const getStatusMessage = (status: string) => {
+    switch (status) {
+      case "uploaded":
+        return "📄 Document uploaded - Parsing text from PDF... This may take 1-2 minutes."
+      case "parsed":
+        return "✅ Text extracted - Analyzing medical content and structuring data..."
+      case "structured":
+        return "🔬 Data structured - Running AI risk prediction model..."
+      case "predicted":
+        return "✅ Analysis complete! Click to view detailed results and BI-RADS classification."
+      case "failed":
+        return "❌ Processing failed - Please check the document format and try uploading again."
+      case "processing":
+        return "⏳ Processing document - Please wait while we analyze your report..."
+      default:
+        return status
     }
   }
 
@@ -326,13 +347,32 @@ export default function ClinicPortalPage() {
                             </td>
                             <td className="py-3 px-4 text-muted-foreground">{formatDate(doc.created_at)}</td>
                             <td className="py-3 px-4">
-                              <div className="flex items-center gap-2">
-                                {getStatusIcon(doc.status)}
-                                <span
-                                  className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusClass(doc.status)}`}
-                                >
-                                  {doc.status}
+                              <div className="flex flex-col gap-2">
+                                <div className="flex items-center gap-2">
+                                  {getStatusIcon(doc.status)}
+                                  <span
+                                    className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusClass(doc.status)}`}
+                                  >
+                                    {doc.status.toUpperCase()}
+                                  </span>
+                                </div>
+                                {/* Show progress bar for uploaded/processing status */}
+                                {(doc.status === "uploaded" || doc.status === "processing") && (
+                                  <div className="w-full bg-muted rounded-full h-1.5">
+                                    <div
+                                      className="bg-blue-500 h-1.5 rounded-full transition-all duration-300 animate-pulse"
+                                      style={{ width: "60%" }}
+                                    />
+                                  </div>
+                                )}
+                                <span className="text-xs text-muted-foreground font-medium">
+                                  {getStatusMessage(doc.status)}
                                 </span>
+                                {doc.status === "failed" && doc.error && (
+                                  <span className="text-xs text-red-600 dark:text-red-400 font-medium bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded">
+                                    ⚠️ Error: {doc.error}
+                                  </span>
+                                )}
                               </div>
                             </td>
                             <td className="py-3 px-4">
