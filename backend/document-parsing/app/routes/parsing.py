@@ -1,7 +1,7 @@
 """
 Parsing routes for document processing
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.models.database import get_db
@@ -85,6 +85,7 @@ async def get_parsing_result_by_document(
 @router.post("/parse-internal", response_model=ParseResponse, include_in_schema=False)
 async def parse_document_internal(
     request: ParseRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """Internal endpoint for service-to-service communication (no auth required)"""
@@ -92,18 +93,24 @@ async def parse_document_internal(
     print(f"   File path: {request.file_path}")
     
     try:
-        parsing_service = DocumentParsingService(db)
-        result = await parsing_service.parse_document(
-            document_id=request.document_id,
-            file_path=request.file_path
+        # Check if file exists before queuing
+        import os
+        if not os.path.exists(request.file_path):
+            raise FileNotFoundError(f"File not found: {request.file_path}")
+        
+        # Add parsing task to background
+        background_tasks.add_task(
+            process_document_async,
+            request.document_id,
+            request.file_path
         )
         
-        print(f"   ✅ Parsing completed successfully")
+        print(f"   ⏳ Parsing queued for background processing")
         return ParseResponse(
-            parsing_id=result.id,
-            document_id=result.document_id,
-            status=result.status,
-            message="Document parsed successfully"
+            parsing_id=request.document_id,  # Use document_id as temp parsing_id
+            document_id=request.document_id,
+            status="processing",
+            message="Document parsing started in background"
         )
         
     except FileNotFoundError as e:
@@ -112,6 +119,24 @@ async def parse_document_internal(
     except Exception as e:
         print(f"   ❌ Parsing failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Parsing failed: {str(e)}")
+
+async def process_document_async(document_id: str, file_path: str):
+    """Background task to process document"""
+    from app.models.database import SessionLocal
+    db = SessionLocal()
+    
+    try:
+        print(f"   🔄 Starting background parsing for: {document_id}")
+        parsing_service = DocumentParsingService(db)
+        result = await parsing_service.parse_document(
+            document_id=document_id,
+            file_path=file_path
+        )
+        print(f"   ✅ Parsing completed successfully")
+    except Exception as e:
+        print(f"   ❌ Background parsing failed: {str(e)}")
+    finally:
+        db.close()
 
 @router.delete("/{document_id}/delete-internal", include_in_schema=False)
 async def delete_parsing_result_internal(

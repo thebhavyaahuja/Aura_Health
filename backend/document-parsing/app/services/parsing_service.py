@@ -11,12 +11,24 @@ from docling.document_converter import DocumentConverter
 from app.models.database import ParsingResult
 from app.config import PARSED_DIR, INFORMATION_STRUCTURING_URL, DOCUMENT_INGESTION_URL
 
+# Singleton instance of DocumentConverter to avoid reloading models
+_converter_instance = None
+
+def get_converter():
+    """Get or create singleton DocumentConverter instance"""
+    global _converter_instance
+    if _converter_instance is None:
+        print("🔧 Initializing DocumentConverter (one-time setup)...")
+        _converter_instance = DocumentConverter()
+        print("✅ DocumentConverter ready")
+    return _converter_instance
+
 class DocumentParsingService:
     """Service for parsing documents using docling"""
     
     def __init__(self, db: Session):
         self.db = db
-        self.converter = DocumentConverter()
+        self.converter = get_converter()
     
     async def parse_document(self, document_id: str, file_path: str) -> ParsingResult:
         """Parse document using docling"""

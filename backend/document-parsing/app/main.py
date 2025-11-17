@@ -22,6 +22,13 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Document Parsing Service...")
     create_tables()
     logger.info("Database tables created successfully")
+    
+    # Preload DocumentConverter to avoid delay on first request
+    logger.info("Preloading DocumentConverter...")
+    from app.services.parsing_service import get_converter
+    get_converter()
+    logger.info("DocumentConverter preloaded successfully")
+    
     yield
     # Shutdown
     logger.info("Shutting down Document Parsing Service...")

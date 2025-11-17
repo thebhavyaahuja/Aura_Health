@@ -99,7 +99,10 @@ services:
     restart: unless-stopped
 
   risk-prediction:
-    build: ./backend/risk-prediction
+    build:
+      context: ./backend/risk-prediction
+      args:
+        - HUGGINGFACE_MODEL_REPO=${HUGGINGFACE_MODEL_REPO:-ishro/biogpt-aura}
     container_name: mammography-risk-prediction
     ports:
       - "8004:8004"
@@ -108,17 +111,28 @@ services:
       - DATABASE_URL=sqlite:////app/data/predictions.db
       - HUGGINGFACE_MODEL_REPO=${HUGGINGFACE_MODEL_REPO:-ishro/biogpt-aura}
       - USE_HUGGINGFACE_MODEL=${USE_HUGGINGFACE_MODEL:-true}
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface
+      - HF_HOME=/app/.cache/huggingface
       - DOCUMENT_INGESTION_URL=http://document-ingestion:8001
       - INFORMATION_STRUCTURING_URL=http://information-structuring:8003
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - risk_data:/app/data
+      - model_cache:/app/.cache/huggingface
     depends_on:
-      - information-structuring
-      - document-ingestion
+      information-structuring:
+        condition: service_started
+      document-ingestion:
+        condition: service_started
     networks:
       - mammography-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8004/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   # === Frontend ===
 
@@ -167,6 +181,7 @@ volumes:
   structuring_data:
   risk_data:
   shared_storage:
+  model_cache:  # Cache for HuggingFace models
 
 networks:
   mammography-network:
