@@ -32,8 +32,10 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
 # Service URLs
+DOCUMENT_INGESTION_URL = os.getenv("DOCUMENT_INGESTION_URL", "http://localhost:8001")
 DOCUMENT_PARSING_URL = os.getenv("DOCUMENT_PARSING_URL", "http://localhost:8002")
 FEATURE_ENGINEERING_URL = os.getenv("FEATURE_ENGINEERING_URL", "http://localhost:8004")
+RISK_PREDICTION_URL = os.getenv("RISK_PREDICTION_URL", "http://localhost:8004")
 
 # Logging
 LOG_LEVEL = "INFO"

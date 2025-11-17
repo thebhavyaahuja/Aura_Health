@@ -1,0 +1,173 @@
+# 🐳 Docker Compose - Full Stack Mammography Report Analysis System
+# This file orchestrates all backend microservices and the frontend Next.js application
+
+version: '3.8'
+
+services:
+  # === Backend Services ===
+
+  authentication:
+    build: ./backend/authentication
+    container_name: mammography-authentication
+    ports:
+      - "8010:8010"
+    environment:
+      - PORT=8010
+      - DATABASE_URL=sqlite:////app/data/auth.db
+      - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-me}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+    volumes:
+      - auth_data:/app/data
+    depends_on:
+      - redis
+    networks:
+      - mammography-network
+    restart: unless-stopped
+
+  document-ingestion:
+    build: ./backend/document-ingestion
+    container_name: mammography-ingestion
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+      - DATABASE_URL=sqlite:////app/data/database.db
+      - REDIS_URL=redis://redis:6379
+      - STORAGE_DIR=/app/storage
+      - UPLOAD_DIR=/app/storage/uploads
+      - DOCUMENT_PARSING_URL=http://document-parsing:8002
+      - INFORMATION_STRUCTURING_URL=http://information-structuring:8003
+    volumes:
+      - ingestion_data:/app/data
+      - shared_storage:/app/storage
+    depends_on:
+      - redis
+    networks:
+      - mammography-network
+    restart: unless-stopped
+
+  document-parsing:
+    build: ./backend/document-parsing
+    container_name: mammography-parsing
+    ports:
+      - "8002:8002"
+    environment:
+      - PORT=8002
+      - DATABASE_URL=sqlite:////app/data/parsing.db
+      - REDIS_URL=redis://redis:6379
+      - STORAGE_DIR=/app/storage
+      - OUTPUT_DIR=/app/storage/parsed
+      - DOCUMENT_INGESTION_URL=http://document-ingestion:8001
+      - INFORMATION_STRUCTURING_URL=http://information-structuring:8003
+    volumes:
+      - parsing_data:/app/data
+      - shared_storage:/app/storage
+    depends_on:
+      - redis
+      - document-ingestion
+    networks:
+      - mammography-network
+    restart: unless-stopped
+
+  information-structuring:
+    build: ./backend/information-structuring
+    container_name: mammography-structuring
+    ports:
+      - "8003:8003"
+    environment:
+      - PORT=8003
+      - HOST=0.0.0.0
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.0-flash}
+      - DATABASE_URL=sqlite:////app/data/structuring.db
+      - STORAGE_DIR=/app/storage
+      - RESULTS_DIR=/app/storage/results
+      - DOCUMENT_PARSING_URL=http://document-parsing:8002
+      - DOCUMENT_INGESTION_URL=http://document-ingestion:8001
+      - RISK_PREDICTION_URL=http://risk-prediction:8004
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - structuring_data:/app/data
+      - shared_storage:/app/storage
+    depends_on:
+      - document-parsing
+      - document-ingestion
+    networks:
+      - mammography-network
+    restart: unless-stopped
+
+  risk-prediction:
+    build: ./backend/risk-prediction
+    container_name: mammography-risk-prediction
+    ports:
+      - "8004:8004"
+    environment:
+      - PORT=8004
+      - DATABASE_URL=sqlite:////app/data/predictions.db
+      - HUGGINGFACE_MODEL_REPO=${HUGGINGFACE_MODEL_REPO:-ishro/biogpt-aura}
+      - USE_HUGGINGFACE_MODEL=${USE_HUGGINGFACE_MODEL:-true}
+      - DOCUMENT_INGESTION_URL=http://document-ingestion:8001
+      - INFORMATION_STRUCTURING_URL=http://information-structuring:8003
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - risk_data:/app/data
+    depends_on:
+      - information-structuring
+      - document-ingestion
+    networks:
+      - mammography-network
+    restart: unless-stopped
+
+  # === Frontend ===
+
+  frontend:
+    build: ./frontend
+    container_name: mammography-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8010}
+      - NEXT_PUBLIC_AUTH_URL=${NEXT_PUBLIC_AUTH_URL:-http://localhost:8010}
+      - NEXT_PUBLIC_INGESTION_URL=${NEXT_PUBLIC_INGESTION_URL:-http://localhost:8001}
+      - NEXT_PUBLIC_PARSING_URL=${NEXT_PUBLIC_PARSING_URL:-http://localhost:8002}
+      - NEXT_PUBLIC_STRUCTURING_URL=${NEXT_PUBLIC_STRUCTURING_URL:-http://localhost:8003}
+      - NEXT_PUBLIC_RISK_URL=${NEXT_PUBLIC_RISK_URL:-http://localhost:8004}
+    depends_on:
+      - authentication
+      - document-ingestion
+      - information-structuring
+      - risk-prediction
+    networks:
+      - mammography-network
+    restart: unless-stopped
+
+  # === Infrastructure Services ===
+
+  redis:
+    image: redis:7-alpine
+    container_name: mammography-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - mammography-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  auth_data:
+  ingestion_data:
+  parsing_data:
+  structuring_data:
+  risk_data:
+  shared_storage:
+
+networks:
+  mammography-network:
+    driver: bridge

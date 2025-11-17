@@ -23,22 +23,8 @@ async def lifespan(app: FastAPI):
     create_tables()
     logger.info("Database tables created successfully")
     
-    # Try to load model at startup (with error handling)
-    try:
-        from app.services.prediction_service import PredictionService
-        from app.models.database import SessionLocal
-        db = SessionLocal()
-        try:
-            service = PredictionService(db)
-            if service.is_model_loaded():
-                logger.info("Model loaded and ready for predictions")
-            else:
-                logger.warning("Model failed to load - check MODEL_PATH configuration")
-        finally:
-            db.close()
-    except Exception as e:
-        logger.error(f"Failed to initialize prediction service: {e}")
-        logger.warning("Service will start but predictions may fail")
+    # Model will be loaded lazily on first prediction request
+    logger.info("Service ready - model will be loaded on first prediction request")
     
     yield
     # Shutdown

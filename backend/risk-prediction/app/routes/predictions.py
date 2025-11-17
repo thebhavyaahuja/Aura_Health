@@ -116,6 +116,8 @@ async def predict_risk_internal(
     db: Session = Depends(get_db)
 ):
     """Internal endpoint for service-to-service communication (no auth required)"""
+    print(f"📥 Received prediction request for document: {request.document_id}")
+    print(f"   Structuring ID: {request.structuring_id}")
     
     try:
         prediction_service = PredictionService(db)
@@ -125,6 +127,7 @@ async def predict_risk_internal(
             structuring_id=request.structuring_id
         )
         
+        print(f"   ✅ Prediction completed with status: {prediction.status}")
         return PredictionResponse(
             prediction_id=prediction.id,
             document_id=prediction.document_id,
@@ -134,6 +137,7 @@ async def predict_risk_internal(
         )
         
     except Exception as e:
+        print(f"   ❌ Prediction failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
 @router.delete("/{document_id}/delete-internal", include_in_schema=False)

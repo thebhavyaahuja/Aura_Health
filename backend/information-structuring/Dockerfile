@@ -2,17 +2,21 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install system deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Copy application code
+# Copy source
 COPY . .
-
-# Expose port (will be overridden by docker-compose)
-EXPOSE 8010
 
 ENV PYTHONUNBUFFERED=1
 
-# Run using run.py which uses PORT env var
+EXPOSE 8003
+
 CMD ["python", "run.py"]

@@ -12,6 +12,7 @@ from app.models.database import Document, ProcessingStatus
 from app.models.schemas import UploadMetadata, FileInfo
 from app.utils.storage import generate_file_path, save_uploaded_file, get_file_info
 from app.utils.validation import validate_upload_file, get_file_size
+from app.config import DOCUMENT_PARSING_URL
 
 class DocumentService:
     """Service for document operations"""
@@ -144,7 +145,7 @@ class DocumentService:
                 import httpx
                 # Delete from parsing service
                 try:
-                    httpx.delete(f"http://localhost:8002/parsing/{document_id}/delete-internal", timeout=5.0)
+                    httpx.delete(f"{DOCUMENT_PARSING_URL}/parsing/{document_id}/delete-internal", timeout=5.0)
                 except:
                     pass
                 
@@ -189,6 +190,9 @@ class DocumentService:
     
     async def trigger_parsing_service(self, document_id: str, file_path: str) -> None:
         """Trigger document parsing service (internal service call, no auth needed)"""
+        print(f"🔄 Triggering parsing service for document {document_id}")
+        print(f"   URL: {DOCUMENT_PARSING_URL}/parsing/parse-internal")
+        print(f"   File: {file_path}")
         try:
             payload = {
                 "document_id": document_id,
@@ -198,12 +202,14 @@ class DocumentService:
             async with httpx.AsyncClient() as client:
                 # Internal service call - no authentication required
                 response = await client.post(
-                    "http://localhost:8002/parsing/parse-internal",
+                    f"{DOCUMENT_PARSING_URL}/parsing/parse-internal",
                     json=payload,
                     timeout=30.0
                 )
                 
+                print(f"   Response: {response.status_code}")
                 if response.status_code == 200:
+                    print(f"   ✅ Parsing triggered successfully")
                     # Update status to indicate parsing started
                     self.add_processing_status(
                         document_id, 
@@ -211,6 +217,7 @@ class DocumentService:
                         "processing"
                     )
                 else:
+                    print(f"   ❌ Parsing service returned {response.status_code}: {response.text}")
                     # Log error but don't fail upload
                     self.add_processing_status(
                         document_id, 
@@ -220,6 +227,7 @@ class DocumentService:
                     )
                     
         except Exception as e:
+            print(f"   ❌ Exception triggering parsing: {str(e)}")
             # Log error but don't fail upload
             self.add_processing_status(
                 document_id, 

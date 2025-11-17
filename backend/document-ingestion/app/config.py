@@ -39,6 +39,10 @@ API_KEY = os.getenv("API_KEY", "demo-api-key-123")  # Simple API key for demo
 LOG_LEVEL = "INFO"
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
+# Service URLs (for inter-service communication)
+DOCUMENT_PARSING_URL = os.getenv("DOCUMENT_PARSING_URL", "http://localhost:8002")
+INFORMATION_STRUCTURING_URL = os.getenv("INFORMATION_STRUCTURING_URL", "http://localhost:8003")
+
 # Create directories if they don't exist
 def create_directories():
     """Create necessary directories"""

@@ -9,7 +9,13 @@ from sqlalchemy.orm import Session
 
 from app.models.database import StructuringResult
 from app.models.schemas import StructuredData
-from app.config import GEMINI_API_KEY, GEMINI_API_URL, RESULTS_DIR
+from app.config import (
+    GEMINI_API_KEY, 
+    GEMINI_API_URL, 
+    RESULTS_DIR, 
+    DOCUMENT_INGESTION_URL, 
+    RISK_PREDICTION_URL
+)
 
 class InformationStructuringService:
     """Service for structuring mammography reports using Gemini API"""
@@ -352,7 +358,7 @@ Return only valid JSON, no additional text or explanations.
             async with httpx.AsyncClient() as client:
                 # Update processing status
                 await client.post(
-                    "http://localhost:8001/documents/update-status-internal",
+                    f"{DOCUMENT_INGESTION_URL}/documents/update-status-internal",
                     json=payload,
                     timeout=10.0
                 )
@@ -360,7 +366,7 @@ Return only valid JSON, no additional text or explanations.
                 # Update main document status
                 if doc_status:
                     await client.patch(
-                        f"http://localhost:8001/documents/{document_id}/status-internal",
+                        f"{DOCUMENT_INGESTION_URL}/documents/{document_id}/status-internal",
                         json={"status": doc_status},
                         timeout=10.0
                     )
@@ -384,7 +390,7 @@ Return only valid JSON, no additional text or explanations.
             
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    "http://localhost:8004/predictions/predict-internal",
+                    f"{RISK_PREDICTION_URL}/predictions/predict-internal",
                     json=payload,
                     timeout=60.0  # Allow more time for model inference
                 )

@@ -1,5 +1,9 @@
 # 🩺 Mammography Report Analysis & Cancer Risk Stratification System
 
+> **🐳 Quick Start with Docker:** See [`DOCKER_SETUP.md`](./DOCKER_SETUP.md) for the fastest way to run the entire project locally.
+
+---
+
 ## 1️⃣ Problem Overview
 Hospitals receive mammography reports in various formats — PDFs, scanned images, or text files — often with inconsistent structure.  
 These reports contain critical diagnostic information (e.g., gland density, findings, BIRADS score).  

@@ -98,6 +98,8 @@ async def structure_document_internal(
     db: Session = Depends(get_db)
 ):
     """Internal endpoint for service-to-service communication (no auth required)"""
+    print(f"📥 Received structure request for document: {request.document_id}")
+    print(f"   Text length: {len(request.extracted_text)} chars")
     
     try:
         structuring_service = InformationStructuringService(db)
@@ -106,6 +108,7 @@ async def structure_document_internal(
             extracted_text=request.extracted_text
         )
         
+        print(f"   ✅ Structuring completed with status: {result.status}")
         return StructureResponse(
             structuring_id=result.id,
             document_id=result.document_id,
@@ -114,6 +117,7 @@ async def structure_document_internal(
         )
         
     except Exception as e:
+        print(f"   ❌ Structuring failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Structuring failed: {str(e)}")
 
 @router.delete("/{document_id}/delete-internal", include_in_schema=False)

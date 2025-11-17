@@ -88,6 +88,8 @@ async def parse_document_internal(
     db: Session = Depends(get_db)
 ):
     """Internal endpoint for service-to-service communication (no auth required)"""
+    print(f"📥 Received parse request for document: {request.document_id}")
+    print(f"   File path: {request.file_path}")
     
     try:
         parsing_service = DocumentParsingService(db)
@@ -96,6 +98,7 @@ async def parse_document_internal(
             file_path=request.file_path
         )
         
+        print(f"   ✅ Parsing completed successfully")
         return ParseResponse(
             parsing_id=result.id,
             document_id=result.document_id,
@@ -104,8 +107,10 @@ async def parse_document_internal(
         )
         
     except FileNotFoundError as e:
+        print(f"   ❌ File not found: {str(e)}")
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
+        print(f"   ❌ Parsing failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Parsing failed: {str(e)}")
 
 @router.delete("/{document_id}/delete-internal", include_in_schema=False)

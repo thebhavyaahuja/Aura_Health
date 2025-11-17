@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from docling.document_converter import DocumentConverter
 
 from app.models.database import ParsingResult
-from app.config import PARSED_DIR, INFORMATION_STRUCTURING_URL
+from app.config import PARSED_DIR, INFORMATION_STRUCTURING_URL, DOCUMENT_INGESTION_URL
 
 class DocumentParsingService:
     """Service for parsing documents using docling"""
@@ -126,16 +126,17 @@ class DocumentParsingService:
             async with httpx.AsyncClient() as client:
                 # Update processing status
                 await client.post(
-                    "http://localhost:8001/documents/update-status-internal",
+                    f"{DOCUMENT_INGESTION_URL}/documents/update-status-internal",
                     json=payload,
                     timeout=10.0
                 )
                 
                 # Update main document status
                 if doc_status:
+                    status_payload = {"status": doc_status}
                     await client.patch(
-                        f"http://localhost:8001/documents/{document_id}/status-internal",
-                        json={"status": doc_status},
+                        f"{DOCUMENT_INGESTION_URL}/documents/{document_id}/status-internal",
+                        json=status_payload,
                         timeout=10.0
                     )
                     
@@ -144,6 +145,10 @@ class DocumentParsingService:
     
     async def trigger_structuring_service(self, document_id: str, extracted_text: str) -> None:
         """Trigger information structuring service (internal service call, no auth needed)"""
+        print(f"🔄 Triggering structuring service for document: {document_id}")
+        print(f"   URL: {INFORMATION_STRUCTURING_URL}/structuring/structure-internal")
+        print(f"   Text length: {len(extracted_text)} chars")
+        
         try:
             payload = {
                 "document_id": document_id,
@@ -153,16 +158,20 @@ class DocumentParsingService:
             async with httpx.AsyncClient() as client:
                 # Internal service call - no authentication required
                 response = await client.post(
-                    "http://localhost:8003/structuring/structure-internal",
+                    f"{INFORMATION_STRUCTURING_URL}/structuring/structure-internal",
                     json=payload,
                     timeout=30.0
                 )
                 
+                print(f"   Response status: {response.status_code}")
                 if response.status_code != 200:
-                    print(f"Warning: Structuring service returned {response.status_code}")
+                    print(f"   ⚠️ Warning: Structuring service returned {response.status_code}")
+                    print(f"   Response: {response.text}")
+                else:
+                    print(f"   ✅ Structuring triggered successfully")
                     
         except Exception as e:
-            print(f"Warning: Failed to trigger structuring service: {str(e)}")
+            print(f"   ❌ Failed to trigger structuring service: {str(e)}")
     
     def get_parsing_result(self, document_id: str) -> Optional[ParsingResult]:
         """Get parsing result by document ID"""
