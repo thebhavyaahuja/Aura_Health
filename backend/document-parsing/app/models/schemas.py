@@ -23,6 +23,7 @@ class ParsingResult(BaseModel):
     document_id: str
     extracted_text: str
     status: str
+    progress: int = 0  # Progress percentage (0-100)
     created_at: datetime
 
 class ErrorResponse(BaseModel):

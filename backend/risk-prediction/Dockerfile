@@ -21,12 +21,8 @@ ENV HF_HOME=/app/.cache/huggingface
 ENV HUGGINGFACE_MODEL_REPO=ishro/biogpt-aura
 ENV USE_HUGGINGFACE_MODEL=true
 
-# Download model during build time
-RUN python -c "from transformers import AutoTokenizer, BioGptForSequenceClassification; \
-    print('Downloading BioGPT model...'); \
-    tokenizer = AutoTokenizer.from_pretrained('${HUGGINGFACE_MODEL_REPO:-ishro/biogpt-aura}'); \
-    model = BioGptForSequenceClassification.from_pretrained('${HUGGINGFACE_MODEL_REPO:-ishro/biogpt-aura}'); \
-    print('Model downloaded and cached successfully!')"
+# Download model during build time with progress indication
+RUN python download_model.py
 
 ENV PYTHONUNBUFFERED=1
 

@@ -21,6 +21,7 @@ class ParsingResult(Base):
     document_id = Column(String, nullable=False, unique=True)
     extracted_text = Column(Text, nullable=False)
     status = Column(String(50), default="completed")
+    progress = Column(Integer, default=0)  # Progress percentage (0-100)
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

@@ -44,7 +44,7 @@ async def get_parsing_result(
     current_user: dict = Depends(get_any_user),
     db: Session = Depends(get_db)
 ):
-    """Get parsing result by parsing ID (authenticated users)"""
+    """Get parsing result by parsing ID (authenticated users) with progress tracking"""
     
     parsing_service = DocumentParsingService(db)
     result = parsing_service.get_parsing_result_by_id(parsing_id)
@@ -57,6 +57,7 @@ async def get_parsing_result(
         document_id=result.document_id,
         extracted_text=result.extracted_text,
         status=result.status,
+        progress=result.progress if hasattr(result, 'progress') else 100,
         created_at=result.created_at
     )
 
@@ -66,7 +67,7 @@ async def get_parsing_result_by_document(
     current_user: dict = Depends(get_any_user),
     db: Session = Depends(get_db)
 ):
-    """Get parsing result by document ID (authenticated users)"""
+    """Get parsing result by document ID (authenticated users) with progress tracking"""
     
     parsing_service = DocumentParsingService(db)
     result = parsing_service.get_parsing_result(document_id)
@@ -79,8 +80,55 @@ async def get_parsing_result_by_document(
         document_id=result.document_id,
         extracted_text=result.extracted_text,
         status=result.status,
+        progress=result.progress if hasattr(result, 'progress') else 100,
         created_at=result.created_at
     )
+
+@router.get("/progress/{document_id}")
+async def get_parsing_progress(
+    document_id: str,
+    current_user: dict = Depends(get_any_user),
+    db: Session = Depends(get_db)
+):
+    """Get current parsing progress for a document (lightweight endpoint for polling)"""
+    
+    parsing_service = DocumentParsingService(db)
+    result = parsing_service.get_parsing_result(document_id)
+    
+    if not result:
+        # Return initial state if not started yet
+        return {
+            "document_id": document_id,
+            "status": "pending",
+            "progress": 0,
+            "message": "Waiting to start parsing"
+        }
+    
+    # Return progress info
+    return {
+        "document_id": document_id,
+        "status": result.status,
+        "progress": result.progress if hasattr(result, 'progress') else 100,
+        "message": get_progress_message(result.status, result.progress if hasattr(result, 'progress') else 100),
+        "error_message": result.error_message if hasattr(result, 'error_message') else None
+    }
+
+def get_progress_message(status: str, progress: int) -> str:
+    """Get human-readable progress message"""
+    if status == "failed":
+        return "Parsing failed"
+    elif status == "completed":
+        return "Parsing completed successfully"
+    elif progress < 20:
+        return "Initializing parser..."
+    elif progress < 40:
+        return "Loading document..."
+    elif progress < 70:
+        return "Extracting text from PDF..."
+    elif progress < 90:
+        return "Processing extracted content..."
+    else:
+        return "Finalizing..."
 
 @router.post("/parse-internal", response_model=ParseResponse, include_in_schema=False)
 async def parse_document_internal(
