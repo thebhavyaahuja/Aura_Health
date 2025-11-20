@@ -26,15 +26,16 @@ torch.backends.cudnn.allow_tf32 = True
 torch.backends.cudnn.benchmark = True  # Auto-tune kernels for better performance
 
 # Check GPU availability
-if torch.cuda.is_available():
-    print(f"CUDA Available: {torch.cuda.is_available()}")
-    print(f"CUDA Version: {torch.version.cuda}")
-    print(f"Number of GPUs: {torch.cuda.device_count()}")
-    for i in range(torch.cuda.device_count()):
-        print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
-        print(f"  Memory: {torch.cuda.get_device_properties(i).total_memory / 1024**3:.2f} GB")
-else:
-    print("WARNING: CUDA is not available. Training will be slow on CPU.")
+# Moved to main() to allow for environment variable configuration before CUDA init
+# if torch.cuda.is_available():
+#     print(f"CUDA Available: {torch.cuda.is_available()}")
+#     print(f"CUDA Version: {torch.version.cuda}")
+#     print(f"Number of GPUs: {torch.cuda.device_count()}")
+#     for i in range(torch.cuda.device_count()):
+#         print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+#         print(f"  Memory: {torch.cuda.get_device_properties(i).total_memory / 1024**3:.2f} GB")
+# else:
+#     print("WARNING: CUDA is not available. Training will be slow on CPU.")
 
 
 # --- Configuration ---
@@ -235,8 +236,25 @@ def compute_metrics(p):
     """
     Calculates accuracy and F1-score for evaluation.
     """
-    preds = np.argmax(p.predictions, axis=1)
+    predictions = p.predictions
     labels = p.label_ids
+
+    # If predictions is a tuple (e.g., logits, hidden_states), take the first element
+    if isinstance(predictions, tuple):
+        predictions = predictions[0]
+
+    # If predictions is a list (because eval_do_concat_batches=False), we need to handle it
+    if isinstance(predictions, list):
+        # If the list contains tuples (e.g. [(logits1,), (logits2,)]), extract the first element
+        if len(predictions) > 0 and isinstance(predictions[0], tuple):
+            predictions = [x[0] for x in predictions]
+        # Now concatenate the list of arrays into a single array
+        predictions = np.concatenate(predictions, axis=0)
+        
+    if isinstance(labels, list):
+        labels = np.concatenate(labels, axis=0)
+        
+    preds = np.argmax(predictions, axis=1)
     
     accuracy = accuracy_score(labels, preds)
     # Use 'macro' average for F1-score to treat all classes equally
@@ -316,9 +334,9 @@ def train_model(
         eval_do_concat_batches=False,    # Don't concatenate eval batches in memory
         
         # --- Performance Settings ---
-        ddp_find_unused_parameters=False, # Faster DDP
-        ddp_backend="nccl",               # Use NCCL for multi-GPU
-        local_rank=-1,                    # Let Trainer handle device placement
+        # ddp_find_unused_parameters=False, # Faster DDP
+        # ddp_backend="nccl",               # Use NCCL for multi-GPU
+        # local_rank=-1,                    # Let Trainer handle device placement
         group_by_length=False,            # Disable to avoid index issues with variable lengths
         remove_unused_columns=True,       # Remove non-model columns
         dataloader_drop_last=True,        # Drop incomplete batches to avoid size mismatches
@@ -401,6 +419,18 @@ def evaluate_and_predict(trainer, test_df, tokenized_test, id2label):
     predictions = trainer.predict(tokenized_test)
     raw_scores = predictions.predictions
     
+    # If predictions is a tuple (e.g., logits, hidden_states), take the first element
+    if isinstance(raw_scores, tuple):
+        raw_scores = raw_scores[0]
+    
+    # If predictions is a list (because eval_do_concat_batches=False), we need to handle it
+    if isinstance(raw_scores, list):
+        # If the list contains tuples (e.g. [(logits1,), (logits2,)]), extract the first element
+        if len(raw_scores) > 0 and isinstance(raw_scores[0], tuple):
+            raw_scores = [x[0] for x in raw_scores]
+        # Now concatenate the list of arrays into a single array
+        raw_scores = np.concatenate(raw_scores, axis=0)
+    
     # Get the predicted class ID (the one with the highest score)
     predicted_label_ids = np.argmax(raw_scores, axis=1)
     
@@ -463,7 +493,15 @@ def push_to_huggingface(trainer, tokenizer):
 
 
 def main():
-    # Print initial GPU status
+    # Check if we are running via accelerate/torchrun
+    is_distributed = "LOCAL_RANK" in os.environ or "RANK" in os.environ
+    
+    if not is_distributed:
+        # Force single GPU mode BEFORE any CUDA call
+        os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+        print("Not running in distributed mode. Forcing usage of GPU 0 only.")
+    
+    # Print initial GPU status (Now safe to call)
     print_gpu_memory()
     
     # Step 1: Load and process data
