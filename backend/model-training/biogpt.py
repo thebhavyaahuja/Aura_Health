@@ -57,7 +57,7 @@ TABULAR_COLUMNS = [
 # - Full_Report (as we are combining the specific report sections)
 
 TARGET_COLUMN = "BI-RADS" # The column we want to predict
-MODEL_NAME = "microsoft/biogpt-large"
+MODEL_NAME = "microsoft/biogpt"
 TEST_SIZE = 0.2  # 20% of data for testing
 RANDOM_STATE = 42 # For reproducible results
 OUTPUT_DIR = "./biogpt_birads_classifier"
@@ -465,26 +465,6 @@ def push_to_huggingface(trainer, tokenizer):
 def main():
     # Print initial GPU status
     print_gpu_memory()
-    
-    # Force single GPU mode to avoid DataParallel issues
-    # Use Accelerate or torchrun for proper multi-GPU training
-    if torch.cuda.device_count() > 1:
-        print("\n" + "="*60)
-        print("⚠️  WARNING: Multiple GPUs detected")
-        print("="*60)
-        print("The current error occurs with PyTorch DataParallel.")
-        print("\nFor multi-GPU training, please use one of these methods:")
-        print("\n1. Use Accelerate (RECOMMENDED):")
-        print("   accelerate launch biogpt.py")
-        print("\n2. Use torchrun:")
-        print("   torchrun --nproc_per_node=2 biogpt.py")
-        print("\n3. Run on single GPU:")
-        print("   CUDA_VISIBLE_DEVICES=0 python biogpt.py")
-        print("\nFor now, running on GPU 0 only...")
-        print("="*60 + "\n")
-        
-        # Use only first GPU to avoid DataParallel
-        os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     
     # Step 1: Load and process data
     df, label2id, id2label, num_labels = load_and_preprocess_data()
